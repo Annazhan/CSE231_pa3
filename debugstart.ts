@@ -19,7 +19,7 @@ export function stringifyTree(t: TreeCursor, source: string, d: number): string 
   }
   
 
-const source = "x:bool = True \n x = not x \n"
+const source = "x:int = -1"
 var t = parser.parse(source);
 console.log("Debug start")
 //console.log(JSON.stringify(ast, null, 2));

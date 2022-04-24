@@ -30,6 +30,11 @@ export function traverseLiteral(c: TreeCursor, s: string): Literal <null>{
         case "False":
           bool_val = false
           break
+        case "UnaryExpression":
+          c.firstChild();
+          if(s.substring(c.from, c.to) === "-"){
+            return {tag: "num", value: Number('-'+s.substring(c.from, c.to))}
+          }
         default:
           throw new Error("PARSE ERROR: invalid value to boolean")
       }
