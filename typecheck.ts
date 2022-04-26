@@ -1,4 +1,4 @@
-import {Expr, Literal, Program, Type, varInits, funDefs, Stmt, typedVar, binOp, ClassDef, MethodDef} from './ast';
+import {Expr, Literal, Program, Type, varInits, funDefs, Stmt, typedVar, binOp, ClassDef, MethodDef, LValue} from './ast';
 
 export type TypeEnv = {
     vars: Map <string, Type>
@@ -14,22 +14,22 @@ var globalEnvs: TypeEnv = {
     retType: "none" as Type
 };
 
-export function assignable(lhs: Expr<Type>, rhs: Expr<Type>){
-    if(lhs.a === "bool" || lhs.a === "int"){
-        if(lhs.a === rhs.a){
+export function assignable(lhs: Type, rhs: Type){
+    if(lhs === "bool" || lhs === "int"){
+        if(lhs === rhs){
             return true;
         }
-        return false;
-    }else if(lhs.a === "none"){
-        return false
-    }else if(rhs.a === "none"){
-        return true
-    }else if(rhs.a !== "bool" && rhs.a!== "int"){
-        if(lhs.a.name === rhs.a.name){
+        throw new Error(`TypeError: can't assign ${lhs} to ${rhs}`);
+    }else if(lhs === "none"){
+        throw new Error(`TypeError: can't assign to ${lhs} type`);
+    }else if(rhs === "none"){
+        return true;
+    }else if(rhs !== "bool" && rhs !== "int"){
+        if(lhs.name === rhs.name){
             return true;
         }
     }
-    return false;
+    throw new Error(`TypeError: can't assign ${lhs} to ${rhs}`);
 }
 
 
@@ -67,10 +67,10 @@ export function typeCheckProgram(prog: Program<null>) : Program<Type> {
     
     varinits_typecheck = typeCheckVarInits(prog.varinits,globalEnvs)
 
-    var fundefs_typecheck_firstpass = prog.fundefs.map(v => typeCheckFunDefsInitialPass(v, globalEnvs))
-    fundefs_typecheck = fundefs_typecheck_firstpass.map(v => typeCheckFunDefs(v, globalEnvs))
+    var fundefs_typecheck_firstpass = prog.fundefs.map(v => typeCheckFunDefsInitialPass(v, globalEnvs));
+    fundefs_typecheck = fundefs_typecheck_firstpass.map(v => typeCheckFunDefs(v, globalEnvs));
     //fundefs_typecheck = prog.fundefs.map(v => typeCheckFunDefs(v, localEnvs))
-   
+    class_typecheck = prog.classes.map(c=>tcClassDef(c, globalEnvs));
     
     //add variable and function definitions
     var stmt_env = duplicateEnv(globalEnvs)
@@ -85,7 +85,7 @@ export function typeCheckProgram(prog: Program<null>) : Program<Type> {
 
     stmts_typecheck = typeCheckStmts(prog.stmts, stmt_env)
     //console.log(stmts_typecheck)
-    return {a:"none" as Type, varinits: varinits_typecheck, fundefs:fundefs_typecheck ,stmts: stmts_typecheck};
+    return {a:"none" as Type, varinits: varinits_typecheck, fundefs:fundefs_typecheck, classes: class_typecheck, stmts: stmts_typecheck};
 }
 
 export function tcClassDef(userClass: ClassDef<null>, env: TypeEnv) : ClassDef<Type> {
@@ -109,22 +109,36 @@ export function tcClassDef(userClass: ClassDef<null>, env: TypeEnv) : ClassDef<T
     var classEnv = createClassEnv(env);
 
     var new_inits = typeCheckVarInits(userClass.varinits, classEnv);
-    var new_method = 
+    var new_method = userClass.methodDefs.map(m => tcMethod(m, classEnv));
     
-    return any;
+    return {
+        name: userClass.name, 
+        varinits: new_inits, 
+        methodDefs: new_method, 
+        parent: {tag:"class", name: "object"}
+    };
 }
 
-export function tcMethod(className: string, method: MethodDef<null>, env: TypeEnv) : MethodDef<Type> {
+export function tcMethod(method: MethodDef<null>, env: TypeEnv) : MethodDef<Type> {
     var funDef = {
-        name: `$${className}_$${method.name}`, 
+        name: method.name, 
         params: method.params, 
         ret: method.ret,
         inits: method.inits,
         body: method.body,
     } as funDefs<null>;
 
-    //the method in this function will be found in
+    //the method in the method will be found in function
     var newFundef = typeCheckFunDefs(funDef, env);
+
+    return {
+        a: newFundef.a,
+        name: method.name,
+        params: newFundef.params,
+        ret: newFundef.ret,
+        inits: newFundef.inits,
+        body: newFundef.body,
+    }
 }
 
 export function typeCheckVarInits(inits: varInits <null>[], env:TypeEnv) : varInits<Type> [] {
@@ -135,7 +149,7 @@ export function typeCheckVarInits(inits: varInits <null>[], env:TypeEnv) : varIn
             throw new Error("TYPE ERROR: init type does not match literal type")
         env.vars.set(init.name, init.type)
         typedInits.push({...init, a:init.type, init: typedInit})
-    })
+    });
     return typedInits;
 }
 
@@ -181,32 +195,50 @@ export function typeCheckParams(params: typedVar <null>[]) : typedVar <Type>[]{
     })
 }
 
+export function tcLVaue(lValue: LValue<null>, env: TypeEnv) : LValue <Type> {
+    switch(lValue.tag){
+        case "field":
+            const obj = typeCheckExpr(lValue.obj, env);
+            if(obj.a === "bool" || obj.a === "int" || obj.a === "none"){
+                throw new Error(`TypeError: ${obj} is not an object`);
+            }else{
+                const className = obj.a.name;
+                if(env.classes.get(className)[0].has(lValue.name)){
+                    const fieldType = env.classes.get(className)[0].get(lValue.name);
+                    return {...lValue, obj, a: fieldType};
+                }
+            }
+        case "variable":
+            if(env.vars.has(lValue.name)){
+                const varType = env.vars.get(lValue.name);
+                return {...lValue, a: varType};
+            }
+            
+    }
+}
+
 export function typeCheckStmts(stmts: Stmt<null>[], env:TypeEnv ): Stmt <Type>[] {
     const typedStmts : Stmt<Type>[] = [];
     stmts.forEach(stmt => {
         switch(stmt.tag) {
             case "assign":
-                if(!env.vars.has(stmt.name)) {
-                    throw new Error("TYPE ERROR: unbound id")
-                }
+                const lhs = tcLVaue(stmt.lhs, env);
                 const typedValue = typeCheckExpr(stmt.value, env)
-                if(typedValue.a !== env.vars.get(stmt.name)) {
-                    throw new Error("TYPE ERROR: cannot assign value to id")
+                if(assignable(lhs.a, typedValue.a)) {
+                    typedStmts.push({...stmt, value:typedValue, a:"none" as Type})
                 }
-                typedStmts.push({...stmt, value:typedValue, a:Type.none})
                 break
             case "return":
                 const typedRet = typeCheckExpr(stmt.ret, env)
-                if(env.retType !== typedRet.a) {
-                    throw new Error("TYPE ERROR: return type mismatch")
+                if(assignable(typedRet.a, env.retType)) {
+                    typedStmts.push({...stmt, ret: typedRet, a:"none" as Type});
                 }
-                typedStmts.push({...stmt, ret: typedRet, a:Type.none})
                 break;
 
             case "if":
                 const ifcond_typeCheck = typeCheckExpr(stmt.cond, env)
 
-                if(ifcond_typeCheck.a != Type.bool)  {
+                if(ifcond_typeCheck.a !== "bool")  {
                     throw new Error("Condition Expression has to be bool")
                 }
 
@@ -216,7 +248,7 @@ export function typeCheckStmts(stmts: Stmt<null>[], env:TypeEnv ): Stmt <Type>[]
 
                 const else_block_typeCheck = typeCheckStmts(stmt.else_block, env);
                 typedStmts.push({...stmt, cond:ifcond_typeCheck, if_block:if_block_typeCheck, 
-                    elif_block: elif_block_typeCheck, else_block:else_block_typeCheck,   a:Type.none})
+                    elif_block: elif_block_typeCheck, else_block:else_block_typeCheck,   a:"none"})
 
                 //const typeCheckCondition ...Expr
                 //const typeCheckThen ... Stmt[]
@@ -226,19 +258,19 @@ export function typeCheckStmts(stmts: Stmt<null>[], env:TypeEnv ): Stmt <Type>[]
             case "while":
                 const cond_typecheck = typeCheckExpr(stmt.cond, env)
 
-                if(cond_typecheck.a != Type.bool)  {
+                if(cond_typecheck.a != "bool")  {
                     throw new Error("Condition Expression has to be bool")
                 }
                 const while_block_typecheck = typeCheckStmts(stmt.while_block, env)
-                typedStmts.push({...stmt, cond:cond_typecheck,while_block:while_block_typecheck ,a:Type.none});
+                typedStmts.push({...stmt, cond:cond_typecheck,while_block:while_block_typecheck ,a:"none"});
                 break;
             
             case "pass":
-                typedStmts.push({...stmt, a: Type.none})
+                typedStmts.push({...stmt, a: "none" as Type})
                 break
             case "expr":
                 const typedExpr = typeCheckExpr(stmt.expr, env)
-                typedStmts.push({...stmt,  expr:typedExpr, a: Type.none})
+                typedStmts.push({...stmt,  expr:typedExpr, a: "none" as Type})
                 break
       }  
     })
@@ -259,15 +291,15 @@ export function typeCheckExpr(expr: Expr<null>, env: TypeEnv) : Expr<Type> {
             const uexpr = typeCheckExpr(expr.arg, env)
             switch(expr.op) {
                 case "not":
-                    if(uexpr.a != Type.bool) 
+                    if(uexpr.a !== "bool") 
                         throw new Error("not operator only works with bool type")
-                    return {...expr, arg:uexpr, a:Type.bool}
+                    return {...expr, arg:uexpr, a:"bool" as Type}
                 case "-":
-                    if(uexpr.a != Type.int) 
+                    if(uexpr.a !== "int") 
                     throw new Error("- operator only works with int type")
-                return {...expr, arg:uexpr, a:Type.int}
+                return {...expr, arg:uexpr, a: "int" as Type}
             } 
-            return {...expr, arg:uexpr, a:Type.int}
+            return {...expr, arg:uexpr, a:"int" as Type}
         case "binop":
             const left = typeCheckExpr(expr.left, env);
             const right = typeCheckExpr(expr.right, env);
@@ -277,12 +309,13 @@ export function typeCheckExpr(expr: Expr<null>, env: TypeEnv) : Expr<Type> {
                 case binOp.MUL:
                 case binOp.DIV:
                 case binOp.MOD: 
-                    if (left.a !== Type.int)
+                    if (left.a !== "int")
                         throw new Error("TYPE ERROR: left expression is not int with operator " + expr.op);
             
-                    if (right.a !== Type.int)
-                    throw new Error("TYPE ERROR: Right expression is not int with operator " + expr.op);
-                    return {...expr, left, right, a: Type.int};
+                    if (right.a !== "int"){
+                        throw new Error("TYPE ERROR: Right expression is not int with operator " + expr.op);
+                    }
+                    return {...expr, left, right, a: "int" as Type};
 
                 case binOp.EQUALS:
                 case binOp.NOTEQUALS:
@@ -290,19 +323,37 @@ export function typeCheckExpr(expr: Expr<null>, env: TypeEnv) : Expr<Type> {
                 case binOp.GEQ:
                 case binOp.LQ:
                 case binOp.GQ:
-                    if (left.a !== Type.int)
+                    if (left.a !== "int")
                     throw new Error("TYPE ERROR: left expression is not int with operator " + expr.op);
             
-                    if (right.a !== Type.int)
+                    if (right.a !== "int")
                     throw new Error("TYPE ERROR: Right expression is not int with operator " + expr.op);
-                    return {...expr, left, right, a: Type.bool};               
+                    return {...expr, left, right, a: "bool"};               
                 case binOp.IS:
-                    if (left.a !== Type.none || right.a !== Type.none)
+                    if (left.a === "none" && right.a === "none"){
+                        return {
+                            a: "bool", 
+                            tag: "literal", 
+                            literal: {a: "bool", tag: "bool", value: true}
+                        };
+                    }else if(left.a === 'bool' || left.a ==='int' || right.a === "bool" || right.a === "int"){
                         throw new Error("TYPE ERROR: is operator doesn't work with int and bool")
-                    
-                    return {...expr, left, right, a: Type.bool};     
+                    }else if(left.a!== "none" && right.a !== "none"){
+                        if(left.a.name === right.a.name){
+                            return {
+                                a: "bool", 
+                                tag: "literal", 
+                                literal: {a: "bool", tag: "bool", value: true}
+                            };
+                        }
+                    }
+                    return {
+                        a: "bool", 
+                        tag: "literal", 
+                        literal: {a: "bool", tag: "bool", value: false}
+                    };
             }
-            return {...expr, left, right, a: Type.int};
+            break;
         case "call":
             const callName = expr.name;
             const args_typecheck = expr.args.map(e => typeCheckExpr(e, env));
@@ -310,7 +361,7 @@ export function typeCheckExpr(expr: Expr<null>, env: TypeEnv) : Expr<Type> {
             if(callName == "print") {
                 if(args_typecheck.length != 1)
                     throw new Error("Incorrect arguments for print");
-                return {...expr, args:args_typecheck, a:Type.none}
+                return {...expr, args:args_typecheck, a:"none"}
             }   
 
             if(!env.funs.has(callName))
@@ -320,7 +371,7 @@ export function typeCheckExpr(expr: Expr<null>, env: TypeEnv) : Expr<Type> {
                 throw new Error("Incorrect arguments for function: " + callName)
             for(let i = 0; i < fundetails[0].length; i++) {
 
-                if(fundetails[0][i] !== args_typecheck[i].a)
+                if(assignable(fundetails[0][i], args_typecheck[i].a))
                     throw new Error("Type mismatch in function argument: " + i)
             }
             return {...expr, args: args_typecheck,a: fundetails[1]};
@@ -328,6 +379,39 @@ export function typeCheckExpr(expr: Expr<null>, env: TypeEnv) : Expr<Type> {
         case "literal":
             const lit = typeCheckLiteral(expr.literal);
             return {...expr, a: lit.a};   
+        case "method":
+            const obj = typeCheckExpr(expr.obj, env);
+            if(obj.a === "bool" || obj.a === "int" || obj.a === "none"){
+                throw new Error(`TypeError: ${obj} is not an object`);
+            }else{
+                const className = obj.a.name;
+                const argList = expr.args.map(a => typeCheckExpr(a, env));
+                if(!env.classes.get(className)[1].has(expr.name)){
+                    throw new Error(`TypeError: ${className} doesn't have function ${expr.name}`);
+                }
+                const methodDetails = env.classes.get(className)[1].get(expr.name);
+                if(methodDetails[0].length !== argList.length){
+                    throw new Error("TypeError: The number of arguments doesn't match with the parameters in " + `${obj.a.name}.${expr.name}`);
+                }
+                for(let i = 0; i < methodDetails[0].length; i++) {
+                    if(assignable(methodDetails[0][i], argList[i].a))
+                        throw new Error(`Type mismatch in function ${obj.a.name}.${expr.name} argument: ${i}`)
+                }
+                return {...expr, obj, args : argList};
+            }
+        case "getField":
+            const fieldObj = typeCheckExpr(expr.obj, env);
+            if(fieldObj.a === "bool" || fieldObj.a === "int" || fieldObj.a === "none"){
+                throw new Error(`TypeError: ${fieldObj} is not an object`);
+            }else{
+                const fieldClass = fieldObj.a.name;
+                if(!env.classes.get(fieldClass)[1].has(expr.name)){
+                    throw new Error(`TypeError: ${fieldClass} doesn't have function ${expr.name}`);
+                }
+                if(!env.classes.get(fieldClass)[0].has(expr.name)){
+                    throw new Error(`TypeError: ${fieldClass} doesn't have the field ${expr.name}`);
+                }
+            }
     }
 
 }
@@ -335,11 +419,13 @@ export function typeCheckExpr(expr: Expr<null>, env: TypeEnv) : Expr<Type> {
 export function typeCheckLiteral(literal: Literal<null>) : Literal<Type> {
     switch(literal.tag) {
         case "num":
-            return {...literal, a: Type.int}
+            return {...literal, a: "int" as Type}
         case "none":
-            return {...literal, a: Type.none}
+            return {...literal, a: "none" as Type}
         case "bool":
-            return {...literal, a: Type.bool}
+            return {...literal, a: "bool" as Type}
+        default:
+            throw new Error("TypeError: not a literal");
     }
 
 }

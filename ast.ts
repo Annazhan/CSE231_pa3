@@ -38,7 +38,6 @@ export type Literal <A> =
   {a?:A, tag: "num", value: number} 
 | {a?:A, tag: "bool", value: boolean}
 | {a?:A, tag: "none"}
-| {a?:A, tag: "class", name: string}
 
 export enum binOp {PLUS = "+", MINUS = "-", 
           MUL = "*", DIV = "//", MOD = "%", EQUALS = "==",
