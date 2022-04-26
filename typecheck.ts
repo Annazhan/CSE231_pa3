@@ -1,24 +1,69 @@
-import {Expr, Literal, Program, Type, varInits, funDefs, Stmt, typedVar, binOp} from './ast';
+import {Expr, Literal, Program, Type, varInits, funDefs, Stmt, typedVar, binOp, ClassDef, MethodDef} from './ast';
 
 export type TypeEnv = {
     vars: Map <string, Type>
     funs: Map <string, [Type[], Type]>,
+    classes: Map <string, [Map<string, Type>, Map <string, [Type[], Type]>]>
     retType: Type
 }
 
-var globalEnvs: TypeEnv = {vars: new Map <string, Type>(), funs: new Map <string, [Type[], Type]>(), retType: Type.none};
+var globalEnvs: TypeEnv = {
+    vars: new Map <string, Type>(), 
+    funs: new Map <string, [Type[], Type]>(), 
+    classes: new Map <string, [Map<string, Type>, Map <string, [Type[], Type]>]>(),
+    retType: "none" as Type
+};
+
+export function assignable(lhs: Expr<Type>, rhs: Expr<Type>){
+    if(lhs.a === "bool" || lhs.a === "int"){
+        if(lhs.a === rhs.a){
+            return true;
+        }
+        return false;
+    }else if(lhs.a === "none"){
+        return false
+    }else if(rhs.a === "none"){
+        return true
+    }else if(rhs.a !== "bool" && rhs.a!== "int"){
+        if(lhs.a.name === rhs.a.name){
+            return true;
+        }
+    }
+    return false;
+}
 
 
 function duplicateEnv(env: TypeEnv): TypeEnv{
-    return {vars: new Map(env.vars), funs: new Map (env.funs), retType: env.retType}
+    return {
+        vars: new Map(env.vars), 
+        funs: new Map (env.funs), 
+        classes: env.classes,
+        retType: env.retType
+    }
 }
+
+function createClassEnv(env: TypeEnv):TypeEnv {
+    return {
+        vars: new Map <string, Type>(),
+        funs: new Map (env.funs), 
+        classes: env.classes,
+        retType: env.retType,
+    }
+}
+
 export function typeCheckProgram(prog: Program<null>) : Program<Type> {
 
-    var localEnvs: TypeEnv = {vars: new Map <string, Type>(), funs: new Map <string, [Type[], Type]>(), retType: Type.none};
+    var localEnvs: TypeEnv = {
+        vars: new Map <string, Type>(), 
+        funs: new Map <string, [Type[], Type]>(), 
+        classes: new Map <string, [Map<string, Type>, Map <string, [Type[], Type]>]>(),
+        retType: "none" as Type
+    };
     
     var varinits_typecheck: varInits <Type>[] = [];
     var fundefs_typecheck: funDefs<Type>[] = [];
     var stmts_typecheck: Stmt <Type>[] = [];
+    var class_typecheck: ClassDef<Type>[] = [];
     
     varinits_typecheck = typeCheckVarInits(prog.varinits,localEnvs)
     
@@ -43,9 +88,47 @@ export function typeCheckProgram(prog: Program<null>) : Program<Type> {
 
     stmts_typecheck = typeCheckStmts(prog.stmts, stmt_env)
     //console.log(stmts_typecheck)
-    return {a:Type.none, varinits: varinits_typecheck, fundefs:fundefs_typecheck ,stmts: stmts_typecheck};
+    return {a:"none" as Type, varinits: varinits_typecheck, fundefs:fundefs_typecheck ,stmts: stmts_typecheck};
 }
 
+export function tcClassDef(userClass: ClassDef<null>, env: TypeEnv) : ClassDef<Type> {
+    var classType = {tag: "class", name: userClass.name} as Type;
+
+    var classField = new Map <string, Type>();
+    userClass.varinits.forEach(param => classField.set(param.name, param.type));
+    var methods = new Map<string, [Type[], Type]>();
+    userClass.methodDefs.forEach(m => methods.set(m.name, [m.params.map(p => p.type), m.ret]));
+
+    if(env.classes.has(userClass.name)){
+        throw new Error("TypeCheckerError: The class has already exsits");
+    }
+    if(env.vars.has(userClass.name)){
+        throw new Error(`TypeCheckerError: The name ${userClass.name} has already used`);
+    }
+
+    //add class definition in advance
+    env.classes.set(userClass.name, [classField, methods]);
+
+    var classEnv = createClassEnv(env);
+
+    var new_inits = typeCheckVarInits(userClass.varinits, classEnv);
+    var new_method = 
+    
+    return any;
+}
+
+export function tcMethod(className: string, method: MethodDef<null>, env: TypeEnv) : MethodDef<Type> {
+    var funDef = {
+        name: `$${className}_$${method.name}`, 
+        params: method.params, 
+        ret: method.ret,
+        inits: method.inits,
+        body: method.body,
+    } as funDefs<null>;
+
+    //the method in this function will be found in
+    var newFundef = typeCheckFunDefs(funDef, env);
+}
 
 export function typeCheckVarInits(inits: varInits <null>[], env:TypeEnv) : varInits<Type> [] {
     const typedInits:  varInits<Type> [] = [];
@@ -97,6 +180,7 @@ export function typeCheckFunDefs(fun: funDefs <null>, env:TypeEnv) : funDefs<Typ
     const typedStmts = typeCheckStmts(fun.body, localEnv)
     return {...fun, params:typedParams, inits:typedInits, body: typedStmts  }
 }
+
 export function typeCheckParams(params: typedVar <null>[]) : typedVar <Type>[]{
     return params.map(param => {
         return {...param, a:param.type}
