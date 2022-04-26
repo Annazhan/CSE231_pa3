@@ -53,30 +53,27 @@ function createClassEnv(env: TypeEnv):TypeEnv {
 
 export function typeCheckProgram(prog: Program<null>) : Program<Type> {
 
-    var localEnvs: TypeEnv = {
-        vars: new Map <string, Type>(), 
-        funs: new Map <string, [Type[], Type]>(), 
-        classes: new Map <string, [Map<string, Type>, Map <string, [Type[], Type]>]>(),
-        retType: "none" as Type
-    };
+    // var localEnvs: TypeEnv = {
+    //     vars: new Map <string, Type>(), 
+    //     funs: new Map <string, [Type[], Type]>(), 
+    //     classes: new Map <string, [Map<string, Type>, Map <string, [Type[], Type]>]>(),
+    //     retType: "none" as Type
+    // };
     
     var varinits_typecheck: varInits <Type>[] = [];
     var fundefs_typecheck: funDefs<Type>[] = [];
     var stmts_typecheck: Stmt <Type>[] = [];
     var class_typecheck: ClassDef<Type>[] = [];
     
-    varinits_typecheck = typeCheckVarInits(prog.varinits,localEnvs)
-    
-    globalEnvs = duplicateEnv(localEnvs)
+    varinits_typecheck = typeCheckVarInits(prog.varinits,globalEnvs)
 
-    var fundefs_typecheck_firstpass = prog.fundefs.map(v => typeCheckFunDefsInitialPass(v, localEnvs))
+    var fundefs_typecheck_firstpass = prog.fundefs.map(v => typeCheckFunDefsInitialPass(v, globalEnvs))
     fundefs_typecheck = fundefs_typecheck_firstpass.map(v => typeCheckFunDefs(v, globalEnvs))
     //fundefs_typecheck = prog.fundefs.map(v => typeCheckFunDefs(v, localEnvs))
    
     
     //add variable and function definitions
-    localEnvs = globalEnvs
-    var stmt_env = duplicateEnv(localEnvs)
+    var stmt_env = duplicateEnv(globalEnvs)
 
     varinits_typecheck.forEach((init) => {
         stmt_env.vars.set(init.name, init.type)
@@ -168,9 +165,6 @@ export function typeCheckFunDefs(fun: funDefs <null>, env:TypeEnv) : funDefs<Typ
     fun.inits.forEach(init => {
         localEnv.vars.set(init.name, init.type)
     })
-
-    //add function to env
-    localEnv.funs.set(fun.name, [fun.params.map(param => param.type), fun.ret])
     
     //add return type
     localEnv.retType = fun.ret
