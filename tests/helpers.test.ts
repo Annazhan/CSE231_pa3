@@ -20,45 +20,10 @@ export function typeCheck(source: string) : Type {
 // You can modify `importObject` to have any new fields you need here, or
 // within another function in your compiler, for example if you need other
 // JavaScript-side helpers
+
 export async function run(source: string) {
-  var importObject = {
-    imports: {
-      print_num: (arg : any) => {
-        console.log("Logging from WASM: ", arg);
-        const elt = document.createElement("pre");
-        document.getElementById("output").appendChild(elt);
-        elt.innerText = arg;
-        return arg;
-      },
-      print_bool: (arg : any) => {
-        console.log("Logging from WASM: ", arg);
-        const elt = document.createElement("pre");
-        document.getElementById("output").appendChild(elt);
-        let arg1 = ""
-        if(arg == 1) {
-          arg1 = "True"
-        }
-        else
-          arg1 = "False"
-        elt.innerText = arg1;
-        
-        return arg1;
-      },
-      print_none: (arg : any) => {
-        console.log("Logging from WASM: ", arg);
-        const elt = document.createElement("pre");
-        document.getElementById("output").appendChild(elt);
-        arg = "None"
-        elt.innerText = arg;
-        return arg;
-      },
-      abs: Math.abs,
-      max: Math.max,
-      min: Math.min, 
-      pow: Math.pow
-    },
-  };
-  return await runner(source, {importObject});
+  await runner(source, {importObject});
+  return 
 }
 
 type Type =

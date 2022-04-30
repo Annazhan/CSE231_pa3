@@ -55,13 +55,15 @@ function createClassEnv(env: TypeEnv):TypeEnv {
 
 export function typeCheckProgram(prog: Program<null>) : Program<Type> {
 
-    // var localEnvs: TypeEnv = {
-    //     vars: new Map <string, Type>(), 
-    //     funs: new Map <string, [Type[], Type]>(), 
-    //     classes: new Map <string, [Map<string, Type>, Map <string, [Type[], Type]>]>(),
-    //     retType: "none" as Type
-    // };
+    var localEnvs: TypeEnv = {
+        vars: new Map <string, Type>(), 
+        funs: new Map <string, [Type[], Type]>(), 
+        classes: new Map <string, [Map<string, Type>, Map <string, [Type[], Type]>]>(),
+        retType: "none" as Type
+    };
     
+    globalEnvs = duplicateEnv(localEnvs);
+
     var varinits_typecheck: varInits <Type>[] = [];
     var fundefs_typecheck: funDefs<Type>[] = [];
     var stmts_typecheck: Stmt <Type>[] = [];
@@ -393,7 +395,7 @@ export function typeCheckExpr(expr: Expr<null>, env: TypeEnv) : Expr<Type> {
                 for(let i = 0; i < fundetails[0].length; i++) {
     
                     if(assignable(fundetails[0][i], args_typecheck[i].a))
-                        throw new Error("TypeError: Type mismatch in function argument: " + i)
+                        throw new Error("TypeError:Type mismatch in function argument: " + i)
                 }
                 return {...expr, args: args_typecheck,a: fundetails[1]};
             }
