@@ -1,3 +1,4 @@
+import { stringify } from "querystring";
 import { Stmt, Expr, binOp, Type, funDefs, Literal, varInits, LValue, Program, ClassDef, MethodDef } from "./ast";
 import { parse, traverseExpr } from "./parser";
 import {typeCheckProgram } from "./typecheck"
@@ -5,8 +6,8 @@ import {typeCheckProgram } from "./typecheck"
 // https://learnxinyminutes.com/docs/wasm/
 
 type Env = {
-  classes: Map<string, [varInits<Type>[],number]>,
-  variable: Map<string, boolean>
+  classes: Map<string, [Map<string, number>,number]>,
+  variable: Map<string, number>
 };
 
 type CompileResult = {
@@ -22,11 +23,9 @@ export function compile(source: Program<Type>) : CompileResult {
   const classDefs = source.classes
 
   const emptyEnv = {
-    classes: new Map<string, [varInits<Type>[],number]>(),
-    variable: new Map<string, boolean>()
+    classes: new Map<string, [Map<string, number>, number]>(),
+    variable: new Map<string, number>()
   };
-
-  classDefs.forEach(classDef => emptyEnv.classes.set(classDef.name, [classDef.varinits, 0]))
 
   const funsCode: string [] = fundefs.map(f => codeGenFunction(f, emptyEnv)).map(f => f.join("\n"))
   const classMethod = classDefs.map(classDef => 
@@ -40,6 +39,18 @@ export function compile(source: Program<Type>) : CompileResult {
 
   const varInitscode = vardefs.map(v => codeGenVarInits(v)).map(v => v.join("\n")).join("\n\n")
 
+  const classField  = new Map<string, string[]>();
+  classDefs.forEach(c => classField.set(c.name, c.varinits.map(v => v.name)));
+  
+  vardefs.forEach(v => {
+    if(v.a!== "bool" && v.a !== "none" && v.a!== "int"){
+      var fields = new Map<string, number>();
+      classField.get(v.name).forEach((f, index) => fields.set(f, index));
+      emptyEnv.classes.set(v.name, [fields, 0]);
+    }
+  })
+
+  
   const allStmts = stmts.map(s => codeGenStmt(s, emptyEnv)).flat()
   
   const codeBody = [`(local $$last i32)`, varInitscode, ...allStmts].join("\n")
@@ -61,12 +72,12 @@ function variableNames(stmts: varInits<Type>[]): Array<string> {
 
 function codeGenFunction(func: funDefs<Type>, localEnv: Env) : Array<string> {
   const withParamsVariables: Env = {
-    variable: new Map<string, boolean>(localEnv.variable),
+    variable: new Map<string, number>(localEnv.variable),
     classes: localEnv.classes,
   };
   const variables = variableNames(func.inits);
-  variables.forEach(v => withParamsVariables.variable.set(v, true));
-  func.params.forEach(p => withParamsVariables.variable.set(p.name, true));
+  variables.forEach(v => withParamsVariables.variable.set(v, 0));
+  func.params.forEach(p => withParamsVariables.variable.set(p.name, 0));
   
 
   const params = func.params.map(p => `(param $${p.name} i32)`).join(" ");
@@ -79,7 +90,7 @@ function codeGenFunction(func: funDefs<Type>, localEnv: Env) : Array<string> {
   const stmts_body = stmts.join("\n")
   
   return [` ( func $${func.name} ${params} (result i32)
-            (local $scratch i32)
+            (local $$last i32)
             ${varDecls}
             ${varInitscode}
             ${stmts_body}
@@ -209,7 +220,7 @@ function codeGenExpr(expr : Expr<Type>, locals: Env) : Array<string> {
         case "-":
           return [`(i32.const 0)`,...uExpr, `(i32.sub)`]
         default:
-          throw new Error("CompilerError: Not supported operator")
+          throw new Error("COMPILER ERROR: Not supported operator")
       }
 
     case "binop":
@@ -230,7 +241,7 @@ function codeGenExpr(expr : Expr<Type>, locals: Env) : Array<string> {
     case "call":
       if(locals.classes.has(expr.name)){
         let classIntit:string[] = [];
-        const size = locals.classes.get(expr.name).length-1;
+        const size = locals.classes.get(expr.name)[0].length-1;
         locals.classes.get(expr.name)[0].slice(0, size).forEach((v, index) => {
           const offset = 4 * index;
 
@@ -266,7 +277,7 @@ function codeGenExpr(expr : Expr<Type>, locals: Env) : Array<string> {
             callFunction = "print_none";
             break;
           default:
-            new Error(`CompilerError: the print doesn't support ${expr.args[0].a.tag} type`)
+            new Error(`COMPILER ERROR: the print doesn't support ${expr.args[0].a.tag} type`)
         }
       }
       args_stmt.push(`(call $${callFunction} )`)
@@ -302,7 +313,6 @@ export function codeGenLValue(lValue: LValue<Type>, localEnv: Env): Array<string
   switch(lValue.tag){
     case "variable":
       if(localEnv.variable.has(lValue.name)){
-        localEnv.variable.set(lValue.name, true);
         return [`(local.set $${lValue.name})`]
       }
       else{
@@ -312,7 +322,7 @@ export function codeGenLValue(lValue: LValue<Type>, localEnv: Env): Array<string
       const ObjExpr = codeGenExpr(lValue.obj, localEnv);
       const type = lValue.obj.a;
       if(type === "bool" || type === "int" || type === "none"){
-        throw new Error("CompilerError: The type should be a class");
+        throw new Error("COMPILER ERROR: The type should be a class");
       }else{
         const className = type.name;
         const fields = localEnv.classes.get(className)[0].map(lit => lit.name);
@@ -324,7 +334,7 @@ export function codeGenLValue(lValue: LValue<Type>, localEnv: Env): Array<string
       }
 
     default:
-      new Error("CompilerError: not a valid left value");
+      new Error("COMPILER ERROR: not a valid left value");
   }
 }
 

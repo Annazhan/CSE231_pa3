@@ -7,13 +7,20 @@ import {run as runner} from '../runner';
 export function typeCheck(source: string) : Type {
   let ast = parse(source);
   let tc = typeCheckProgram(ast)
-  if (tc.a === "bool" || tc.a === "int" || tc.a === "none"){
-    return tc.a;
+
+  const lastExpr = tc.stmts[tc.stmts.length - 1]
+  
+  if(lastExpr && (lastExpr.tag === "expr" || lastExpr.tag === "assign")) {
+    if (lastExpr.a === "bool" || lastExpr.a === "int" || lastExpr.a === "none"){
+      return lastExpr.a;
+    }
+    return {
+      tag: "object",
+      class: lastExpr.a.name,
+    };
   }
-  return {
-    tag: "object",
-    class: tc.a.name,
-  };
+
+  
 }
 
 // Modify run to use `importObject` (imported above) to use for printing
