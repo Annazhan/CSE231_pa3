@@ -30,7 +30,7 @@ export function traverseLiteral(c: TreeCursor, s: string): Literal <null>{
           bool_val = false
           break
         default:
-          throw new Error("PARSE ERROR: invalid value to boolean")
+          throw new Error("ParseError: invalid value to boolean")
       }
       return {tag: "bool", value: bool_val}
     case "None":
@@ -43,7 +43,7 @@ export function traverseLiteral(c: TreeCursor, s: string): Literal <null>{
       }
       c.parent()
     default:
-      throw new Error("PARSE ERROR: Invalid literal")
+      throw new Error("ParseError: Invalid literal")
   }
 }
 
@@ -101,7 +101,7 @@ export function traverseExpr(c : TreeCursor, s : string) : Expr<null> {
       //console.log(c.type.name)
       //console.log("No")
       if(callName === "print" && args.length != 1) {
-          throw new Error("PARSE ERROR: print only takes 1 value");
+          throw new Error("ParseError: print only takes 1 value");
       } 
       return {
         tag: "call",
@@ -113,7 +113,7 @@ export function traverseExpr(c : TreeCursor, s : string) : Expr<null> {
       c.firstChild();
       var uniOp = s.substring(c.from, c.to);
       if(uniOp !== "-" && uniOp !== "not") {
-        throw new Error("PARSE ERROR: Unsupported unary operator")
+        throw new Error("ParseError: Unsupported unary operator")
       }
       c.nextSibling();
       const expr = traverseExpr(c, s);
@@ -163,7 +163,7 @@ export function traverseExpr(c : TreeCursor, s : string) : Expr<null> {
           op = binOp.IS  
           break   
         default:
-          throw new Error ("PARSE ERROR: Unknown Binary Operator")
+          throw new Error ("ParseError: Unknown Binary Operator")
       }
       c.nextSibling();
       const right = traverseExpr(c, s);
@@ -190,7 +190,7 @@ export function traverseExpr(c : TreeCursor, s : string) : Expr<null> {
     default:
       console.log("Start");
       console.log(s.substring(c.from, c.to));
-      throw new Error("Could not parse expr at " + c.from + " " + c.to + ": " + s.substring(c.from, c.to));
+      throw new Error("ParseError: Could not parse expr at " + c.from + " " + c.to + ": " + s.substring(c.from, c.to));
   }
 }
 
@@ -432,7 +432,7 @@ export function traverseMethod(className: string, c : TreeCursor, s: string) : M
       inits.push(traverseVarInit(c, s))
     }
     else if(isFunDef(c, s)) {
-      throw new Error("PARSE ERROR: nested functions not supported")
+      throw new Error("ParseError: nested functions not supported")
     }
     else {
       break;
@@ -581,7 +581,7 @@ function traverseFunDefs(c : TreeCursor, s : string) : funDefs<null> {
       inits.push(traverseVarInit(c, s))
     }
     else if(isFunDef(c, s)) {
-      throw new Error("PARSE ERROR: nested functions not supported")
+      throw new Error("ParseError: nested functions not supported")
     }
     else {
       break;
@@ -591,7 +591,7 @@ function traverseFunDefs(c : TreeCursor, s : string) : funDefs<null> {
 
   do{
     if(isVarDecl(c, s) || isFunDef(c, s)) {
-      throw new Error("PARSE ERROR: variables and function definition after statement")
+      throw new Error("ParseError: variables and function definition after statement")
     }
   //console.log("Parse Debug Start")
   //console.log(c.type.name);
@@ -665,13 +665,13 @@ export function traverse(c : TreeCursor, s : string) : Program<null>
       }while(true)
       do{
         if(isVarDecl(c, s) || isFunDef(c, s) || isClassDef(c, s)) 
-          throw new Error("PARSE ERROR: variables and classes definition after statement")
+          throw new Error("ParseError: variables and classes definition after statement")
         stmts.push(traverseStmt(c, s))
       } while(c.nextSibling())
       console.log("Statement End")
       return {varinits, fundefs, stmts, classes}
     default:
-      throw new Error("Could not parse program at " + c.node.from + " " + c.node.to);
+      throw new Error("ParseError: Could not parse program at " + c.node.from + " " + c.node.to);
   }
 }
 export function parse(source : string) :Program<null> {

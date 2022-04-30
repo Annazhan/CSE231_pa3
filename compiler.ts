@@ -5,7 +5,7 @@ import {typeCheckProgram } from "./typecheck"
 // https://learnxinyminutes.com/docs/wasm/
 
 type Env = {
-  classes: Map<string, varInits<Type>[]>,
+  classes: Map<string, [varInits<Type>[],number]>,
   variable: Map<string, boolean>
 };
 
@@ -22,11 +22,11 @@ export function compile(source: Program<Type>) : CompileResult {
   const classDefs = source.classes
 
   const emptyEnv = {
-    classes: new Map<string, varInits<Type>[]>(),
+    classes: new Map<string, [varInits<Type>[],number]>(),
     variable: new Map<string, boolean>()
   };
 
-  classDefs.forEach(classDef => emptyEnv.classes.set(classDef.name, classDef.varinits))
+  classDefs.forEach(classDef => emptyEnv.classes.set(classDef.name, [classDef.varinits, 0]))
 
   const funsCode: string [] = fundefs.map(f => codeGenFunction(f, emptyEnv)).map(f => f.join("\n"))
   const classMethod = classDefs.map(classDef => 
@@ -209,7 +209,7 @@ function codeGenExpr(expr : Expr<Type>, locals: Env) : Array<string> {
         case "-":
           return [`(i32.const 0)`,...uExpr, `(i32.sub)`]
         default:
-          throw new Error("Not supported operator")
+          throw new Error("CompilerError: Not supported operator")
       }
 
     case "binop":
@@ -231,7 +231,7 @@ function codeGenExpr(expr : Expr<Type>, locals: Env) : Array<string> {
       if(locals.classes.has(expr.name)){
         let classIntit:string[] = [];
         const size = locals.classes.get(expr.name).length-1;
-        locals.classes.get(expr.name).slice(0, size).forEach((v, index) => {
+        locals.classes.get(expr.name)[0].slice(0, size).forEach((v, index) => {
           const offset = 4 * index;
 
           classIntit = [
@@ -287,7 +287,7 @@ function codeGenExpr(expr : Expr<Type>, locals: Env) : Array<string> {
       const type = expr.obj.a;
       if(type!== "bool" && type !== "int" && type !== "none"){
         const className = type.name;
-        const fields = locals.classes.get(className).map(i => i.name);
+        const fields = locals.classes.get(className)[0].map(i => i.name);
         const index = fields.indexOf(expr.name);
         return [
           ...obj,
@@ -302,6 +302,7 @@ export function codeGenLValue(lValue: LValue<Type>, localEnv: Env): Array<string
   switch(lValue.tag){
     case "variable":
       if(localEnv.variable.has(lValue.name)){
+        localEnv.variable.set(lValue.name, true);
         return [`(local.set $${lValue.name})`]
       }
       else{
@@ -314,7 +315,7 @@ export function codeGenLValue(lValue: LValue<Type>, localEnv: Env): Array<string
         throw new Error("CompilerError: The type should be a class");
       }else{
         const className = type.name;
-        const fields = localEnv.classes.get(className).map(lit => lit.name);
+        const fields = localEnv.classes.get(className)[0].map(lit => lit.name);
         const index = fields.indexOf(lValue.name);
         return [
           ...ObjExpr,
