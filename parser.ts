@@ -66,6 +66,7 @@ export function traverseExpr(c : TreeCursor, s : string) : Expr<null> {
         }  
 
     case "VariableName":
+    case "self":
       return {
         tag: "id",
         name: s.substring(c.from, c.to)
@@ -342,32 +343,36 @@ export function traverseClassDef(c: TreeCursor, s: string) : ClassDef<null> {
   }
 
   c.nextSibling()
-  if(s.substring(c.from, c.to) !== "ArgList"){
+  if(c.type.name !== 'ArgList'){
+    console.log(s.substring(c.from, c.to).toString());
     throw new Error("ParseError: Class needs to define parent object");
   }
-  c.firstChild();
-  c.nextSibling();
-  if(s.substring(c.from, c.to) !== "object"){
+  if(s.substring(c.from, c.to) !== "(object)"){
     throw new Error("ParseError: The only parent object supports here is object");
   }
-  c.parent();
-  if(!c.next()){
+  // if(!c.){
+  //   throw new Error("ParseError: Class body should not be empty");
+  // }
+  c.nextSibling();
+  if(s.substring(c.from, c.to) ===  ""){
     throw new Error("ParseError: Class body should not be empty");
   }
-  c.nextSibling();
   c.firstChild();
-  if(!c.next()){
-    throw new Error("ParseError: class body should not be empty");
-  }
+  // if(!c.next()){
+  //   throw new Error("ParseError: class body should not be empty");
+  // }
 
   const varInits: varInits<null>[] = []
   const methods : MethodDef<null>[] = []
-  while(c.nextSibling()){
-    switch(c.type.name){
+  const pointer = c
+  while(pointer.nextSibling()){
+    switch(pointer.type.name){
       case "AssignStatement":
         varInits.push(traverseVarInit(c, s));
+        break;
       case "FunctionDefinition":
         methods.push(traverseMethod(className, c, s));
+        break;
       default:
         throw new Error("ParseError: false class content");
     }
@@ -435,9 +440,14 @@ export function traverseMethod(className: string, c : TreeCursor, s: string) : M
   }while(c.nextSibling());
 
 
+  var haveReturn = false
   do{
     if(isVarDecl(c, s) || isFunDef(c, s)) {
       throw new Error("ParseError: variables and function definition after statement")
+    }
+    if(c.type.name === "ReturnStatement"){
+      haveReturn = true;
+      break;
     }
   //console.log("Parse Debug Start")
   //console.log(c.type.name);
@@ -446,8 +456,32 @@ export function traverseMethod(className: string, c : TreeCursor, s: string) : M
   body.push(traverseStmt(c, s));
   } while(c.nextSibling());
 
+  if(haveReturn && name === "__init__"){
+    throw new Error("ParseError: init function doesn't have return type");
+  }
+
+  if(haveReturn){
+    c.firstChild()
+    c.nextSibling()
+    if(s.substring(c.from, c.to) === "self"){
+      body.push({
+        tag: "return",
+        ret: {
+          tag: "id",
+          name: "self"
+        }
+      })
+      c.parent()
+    }else{
+      c.parent();
+      body.push(traverseStmt(c,s));
+    }
+    
+  }
+
   c.parent();
   c.parent();
+
   if(ret === "none") {
     body.push({tag: "return", ret: {tag: "literal", literal:{tag: "none"}}})
   }

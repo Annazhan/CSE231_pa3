@@ -38,6 +38,7 @@ export async function run(source : string, config: any) : Promise<number> {
   
   const wasmSource = 
   `(module 
+    (import "js" "memory" (memory 1))
     (func $print_num (import "imports" "print_num") (param i32) (result i32))
     (func $print_bool (import "imports" "print_bool") (param i32) (result i32))
     (func $print_none (import "imports" "print_none") (param i32) (result i32))    
@@ -54,9 +55,12 @@ export async function run(source : string, config: any) : Promise<number> {
 
   const importObject = config.importObject;
   if(!importObject.js){
-    const mem = new WebAssembly.Memory({initial: 1000, maximum: 2000});
-    importObject.js = mem;
+    const mem = new WebAssembly.Memory({initial:2000, maximum:2000});
+    importObject.js = {memory: mem};
   }
+
+  const view = new Int32Array(importObject.js.memory.buffer);
+  console.log("mem view:", view);
 
   const myModule = wabtInterface.parseWat("test.wat", wasmSource);
   var asBinary = myModule.toBinary({});

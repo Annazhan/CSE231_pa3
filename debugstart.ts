@@ -33,7 +33,3 @@ function push(array: any[], ...items: any[]) {
       array.push(item);
   });
 }
-
-let b: any[] = [];
-push(b, [1], 2, 3);
-console.log(b)

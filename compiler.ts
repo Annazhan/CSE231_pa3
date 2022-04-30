@@ -31,8 +31,8 @@ export function compile(source: Program<Type>) : CompileResult {
   const funsCode: string [] = fundefs.map(f => codeGenFunction(f, emptyEnv)).map(f => f.join("\n"))
   const classMethod = classDefs.map(classDef => 
     classDef.methodDefs.map(m => codeGenClassMethod(classDef.name, m, emptyEnv)).join("\n")
-  )
-  funsCode.concat(classMethod)
+  ).join("\n")
+  funsCode.push(classMethod)
   const allfunc = funsCode.join("\n\n")
 
   const varDecls = vardefs.map(v => `(global $${v.name} (mut i32) (i32.const 0))`);
@@ -42,7 +42,7 @@ export function compile(source: Program<Type>) : CompileResult {
 
   const allStmts = stmts.map(s => codeGenStmt(s, emptyEnv)).flat()
   
-  const codeBody = [`(local $scratch i32)`, varInitscode, ...allStmts].join("\n")
+  const codeBody = [`(local $$last i32)`, varInitscode, ...allStmts].join("\n")
 
   return {
     variableDeclare: varDecls.join("\n"),
@@ -113,13 +113,13 @@ function codeGenStmt(stmt: Stmt<Type>, localEnv: Env) : Array<string> {
       var valStmts = codeGenExpr(stmt.value, localEnv);     
       var param = codeGenLValue(stmt.lhs, localEnv);
       if(stmt.lhs.tag === "field"){
-        return [...param, ...valStmts, "i32.store"]
+        return [...param, ...valStmts, "(i32.store)"]
       }
       return [...valStmts, ...param];
 
     case "expr":
       const expr_Stmt = codeGenExpr(stmt.expr, localEnv);
-      //expr_Stmt.push(`(local.set $scratch)`);
+      expr_Stmt.push(`(local.set $$last)`);
       return expr_Stmt;
 
     case "return":
@@ -230,24 +230,24 @@ function codeGenExpr(expr : Expr<Type>, locals: Env) : Array<string> {
     case "call":
       if(locals.classes.has(expr.name)){
         let classIntit:string[] = [];
-        const size = locals.classes.get(expr.name).length;
-        locals.classes.get(expr.name).forEach((v, index) => {
+        const size = locals.classes.get(expr.name).length-1;
+        locals.classes.get(expr.name).slice(0, size).forEach((v, index) => {
           const offset = 4 * index;
 
           classIntit = [
             ...classIntit,
-            `global.get $$heap`,
-            `i32.add(i32.const ${offset})`,
+            `(global.get $$heap)`,
+            `(i32.add(i32.const ${offset}))`,
             ...codeGenLiteral(v.init),
-            `i32.store`
+            `(i32.store)`
           ];
         });
         return [
           ...classIntit,
+          // `(global.get $$heap)`,
+          `(global.set $$heap (i32.add (global.get $$heap) (i32.const ${size * 4})))`,
           `(global.get $$heap)`,
-          `(global.set $$heap (i32.add (globale $$heap) (i32.const ${size * 4})))`,
-          `(global.get $$heap)`,
-          `(i32.sub (i32.const ${size * 4}))`
+          `(i32.sub (i32.const ${size * 4}))`,
         ];
       }
       const args_stmt = expr.args.map(e => codeGenExpr(e, locals)).flat()
@@ -275,14 +275,12 @@ function codeGenExpr(expr : Expr<Type>, locals: Env) : Array<string> {
       const typeMethod = expr.obj.a;
       if(typeMethod!== "bool" && typeMethod !== "int" && typeMethod !== "none"){
         const className = typeMethod.name;
-        const newFun = {
-          tag: "call",
-          name: `${className}_$${expr.name}`,
-          args: [
-            expr.obj,
-            ...expr.args
-          ]
-        }
+        const objMethod = codeGenExpr(expr.obj, locals);
+        const args_method = [...objMethod];
+        args_method.push(expr.args.map(e => codeGenExpr(e, locals)).join("\n"));
+        let method_name = `${className}_$${expr.name}`;
+        args_method.push(`(call $${method_name})`);
+        return args_method;
       }
     case "getField":
       const obj = codeGenExpr(expr.obj, locals);
@@ -293,7 +291,8 @@ function codeGenExpr(expr : Expr<Type>, locals: Env) : Array<string> {
         const index = fields.indexOf(expr.name);
         return [
           ...obj,
-          `(i32.load (i32.add (i32.const ${index * 4})))`
+          `(i32.add (i32.const ${index * 4}))`,
+          `(i32.load)`
         ]
       }
   }

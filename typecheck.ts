@@ -20,7 +20,9 @@ export function assignable(lhs: Type, rhs: Type){
             return true;
         }
         throw new Error(`TypeError: can't assign ${lhs} to ${rhs}`);
-    }else if(lhs === "none"){
+    }else if(lhs === "none" && rhs === "none"){
+        return true;
+    }if(lhs === "none"){
         throw new Error(`TypeError: can't assign to ${lhs} type`);
     }else if(rhs === "none"){
         return true;
@@ -109,6 +111,24 @@ export function tcClassDef(userClass: ClassDef<null>, env: TypeEnv) : ClassDef<T
     var classEnv = createClassEnv(env);
 
     var new_inits = typeCheckVarInits(userClass.varinits, classEnv);
+    new_inits.push({
+        name: "self",
+        a: {
+            tag: "class",
+            name: userClass.name,
+        },
+        type: {
+            tag: "class",
+            name: userClass.name,
+        },
+        init: {
+            a: {
+                tag: "class",
+                name: userClass.name,
+            },
+            tag: "none"
+        },
+    })
     var new_method = userClass.methodDefs.map(m => tcMethod(m, classEnv));
     
     return {
@@ -145,7 +165,7 @@ export function typeCheckVarInits(inits: varInits <null>[], env:TypeEnv) : varIn
     const typedInits:  varInits<Type> [] = [];
     inits.forEach((init) => {
         const typedInit = typeCheckLiteral(init.init)
-        if(typedInit.a !== init.type)
+        if(!assignable(init.type, typedInit.a))
             throw new Error("TYPE ERROR: init type does not match literal type")
         env.vars.set(init.name, init.type)
         typedInits.push({...init, a:init.type, init: typedInit})
@@ -205,15 +225,16 @@ export function tcLVaue(lValue: LValue<null>, env: TypeEnv) : LValue <Type> {
                 const className = obj.a.name;
                 if(env.classes.get(className)[0].has(lValue.name)){
                     const fieldType = env.classes.get(className)[0].get(lValue.name);
-                    return {...lValue, obj, a: fieldType};
+                    return {...lValue, obj: obj, a: fieldType};
                 }
             }
+            break;
         case "variable":
             if(env.vars.has(lValue.name)){
                 const varType = env.vars.get(lValue.name);
                 return {...lValue, a: varType};
             }
-            
+            break;
     }
 }
 
@@ -225,14 +246,15 @@ export function typeCheckStmts(stmts: Stmt<null>[], env:TypeEnv ): Stmt <Type>[]
                 const lhs = tcLVaue(stmt.lhs, env);
                 const typedValue = typeCheckExpr(stmt.value, env)
                 if(assignable(lhs.a, typedValue.a)) {
-                    typedStmts.push({...stmt, value:typedValue, a:"none" as Type})
+                    typedStmts.push({...stmt, lhs, value:typedValue, a:"none" as Type})
                 }
                 break
             case "return":
                 const typedRet = typeCheckExpr(stmt.ret, env)
-                if(assignable(typedRet.a, env.retType)) {
-                    typedStmts.push({...stmt, ret: typedRet, a:"none" as Type});
+                if(!assignable(typedRet.a, env.retType)) {
+                    throw new Error("TypeError: The return type doesm't match");
                 }
+                typedStmts.push({...stmt, ret: typedRet, a:"none" as Type});
                 break;
 
             case "if":
@@ -397,14 +419,14 @@ export function typeCheckExpr(expr: Expr<null>, env: TypeEnv) : Expr<Type> {
                     throw new Error(`TypeError: ${className} doesn't have function ${expr.name}`);
                 }
                 const methodDetails = env.classes.get(className)[1].get(expr.name);
-                if(methodDetails[0].length !== argList.length){
+                if(methodDetails[0].length !== (argList.length + 1)){
                     throw new Error("TypeError: The number of arguments doesn't match with the parameters in " + `${obj.a.name}.${expr.name}`);
                 }
-                for(let i = 0; i < methodDetails[0].length; i++) {
-                    if(assignable(methodDetails[0][i], argList[i].a))
+                for(let i = 0; i < argList.length; i++) {
+                    if(!assignable(methodDetails[0][i+1], argList[i].a))
                         throw new Error(`Type mismatch in function ${obj.a.name}.${expr.name} argument: ${i}`)
                 }
-                return {...expr, obj, args : argList};
+                return {...expr, obj, args : argList, a: methodDetails[1]};
             }
         case "getField":
             const fieldObj = typeCheckExpr(expr.obj, env);
@@ -412,12 +434,13 @@ export function typeCheckExpr(expr: Expr<null>, env: TypeEnv) : Expr<Type> {
                 throw new Error(`TypeError: ${fieldObj} is not an object`);
             }else{
                 const fieldClass = fieldObj.a.name;
-                if(!env.classes.get(fieldClass)[1].has(expr.name)){
-                    throw new Error(`TypeError: ${fieldClass} doesn't have function ${expr.name}`);
-                }
+                // if(!env.classes.get(fieldClass)[1].has(expr.name)){
+                //     throw new Error(`TypeError: ${fieldClass} doesn't have function ${expr.name}`);
+                // }
                 if(!env.classes.get(fieldClass)[0].has(expr.name)){
                     throw new Error(`TypeError: ${fieldClass} doesn't have the field ${expr.name}`);
                 }
+                return {...expr, obj: fieldObj, a: env.classes.get(fieldClass)[0].get(expr.name)}
             }
     }
 
