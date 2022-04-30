@@ -73,15 +73,32 @@ export function traverseExpr(c : TreeCursor, s : string) : Expr<null> {
 
     case "CallExpression":
       c.firstChild();
+      const child = c;
+      if(child.type.name === "MemberExpression"){
+        c.firstChild();
+        var obj = traverseExpr(c, s)
+        c.nextSibling()
+        c.nextSibling()
+        const methodName = s.substring(c.from, c.to);
+        c.parent();
+        c.nextSibling()
+        const methodArg = traverseArgs(c, s);
+        return {
+          tag: "method",
+          obj: obj,
+          name: methodName,
+          args: methodArg,
+        };
+      }
       const callName = s.substring(c.from, c.to);
       c.nextSibling();
-      console.log("Yes")
-      console.log(c.type.name)
+      //console.log("Yes")
+      //console.log(c.type.name)
       const args = traverseArgs(c, s);
-      console.log(c.type.name)
+      //console.log(c.type.name)
       c.parent()
-      console.log(c.type.name)
-      console.log("No")
+      //console.log(c.type.name)
+      //console.log("No")
       if(callName === "print" && args.length != 1) {
           throw new Error("PARSE ERROR: print only takes 1 value");
       } 
@@ -157,7 +174,18 @@ export function traverseExpr(c : TreeCursor, s : string) : Expr<null> {
       const pexpr = traverseExpr(c, s)
       c.parent()
       return pexpr
-
+    case "MemberExpression":
+      c.firstChild()
+      const objField = traverseExpr(c, s);
+      c.nextSibling();
+      c.nextSibling();
+      const fieldName = s.substring(c.from, c.to);
+      c.parent()
+      return {
+        tag: "getField",
+        obj: objField,
+        name: fieldName,
+      };
     default:
       console.log("Start");
       console.log(s.substring(c.from, c.to));

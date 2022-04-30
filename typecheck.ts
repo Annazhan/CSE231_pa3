@@ -364,17 +364,24 @@ export function typeCheckExpr(expr: Expr<null>, env: TypeEnv) : Expr<Type> {
                 return {...expr, args:args_typecheck, a:"none"}
             }   
 
-            if(!env.funs.has(callName))
-                throw new Error("Unrecognized function name")
-            const fundetails = env.funs.get(callName)
-            if(fundetails[0].length != args_typecheck.length)
-                throw new Error("Incorrect arguments for function: " + callName)
-            for(let i = 0; i < fundetails[0].length; i++) {
-
-                if(assignable(fundetails[0][i], args_typecheck[i].a))
-                    throw new Error("Type mismatch in function argument: " + i)
+            if(env.funs.has(callName)){
+                const fundetails = env.funs.get(callName)
+                if(fundetails[0].length != args_typecheck.length)
+                    throw new Error("Incorrect arguments for function: " + callName)
+                for(let i = 0; i < fundetails[0].length; i++) {
+    
+                    if(assignable(fundetails[0][i], args_typecheck[i].a))
+                        throw new Error("Type mismatch in function argument: " + i)
+                }
+                return {...expr, args: args_typecheck,a: fundetails[1]};
             }
-            return {...expr, args: args_typecheck,a: fundetails[1]};
+            if(env.classes.has(callName)){
+                if(args_typecheck.length !== 0){
+                    throw new Error("TypeError: class initialize doesn't have parameter");
+                }
+                return {...expr, a: {tag: "class", name: callName}};
+            }
+            throw new Error(`TypeError: ${callName} is neither function nor class initializer`);
 
         case "literal":
             const lit = typeCheckLiteral(expr.literal);
